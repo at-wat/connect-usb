@@ -168,24 +168,39 @@ int main( int argc, char *argv[] )
 	pid_t pidlist[2][ 32 ];
 	int connected[2][ 32 ];
 	int devtype;
+	int show_list;
 
 	if( argc != 2 )
 	{
 		fprintf( stderr, "USAGE: %s sensors.conf\n", argv[ 0 ] );
+		fprintf( stderr, "       %s --list\n", argv[ 0 ] );
 		return 1;
 	}
 
-	fd = fopen( argv[ 1 ], "r" );
-	if( fd == NULL )
+	if( strcmp( argv[1], "--list" ) == 0 )
 	{
-		fprintf( stderr, "ERROR: \"%s\" not Found\n", argv[ 1 ] );
-		return 0;
-	}
-	len = fread( def, 1, sizeof( def ), fd );
-	def[ len ] = 0;
-	fclose( fd );
+		show_list = 1;
 
-	printf( "\033[31;4mMonitoring cdc_acm and ftdi_sio devices...\033[0m\033[0K\n" );
+		len = 0;
+		def[ len ] = 0;
+	}
+	else
+	{
+		show_list = 0;
+
+		fd = fopen( argv[ 1 ], "r" );
+		if( fd == NULL )
+		{
+			fprintf( stderr, "ERROR: \"%s\" not Found\n", argv[ 1 ] );
+			return 0;
+		}
+		len = fread( def, 1, sizeof( def ), fd );
+		def[ len ] = 0;
+		fclose( fd );
+	}
+
+	if( !show_list )
+		printf( "\033[31;4mMonitoring cdc_acm and ftdi_sio devices...\033[0m\033[0K\n" );
 
 	ndevlist = 0;
 	{
@@ -263,13 +278,10 @@ int main( int argc, char *argv[] )
 		{
 			fd = fopen( "/sys/kernel/debug/usb/devices", "r" );
 			if( fd == NULL )
-			{			
-				fprintf( stderr, "ERROR: Can not open \"/proc/bus/usb/devices\"\n" );
-				fprintf( stderr, "It maybe work if add these line into startup routine (do_start()) of \"/etc/init.d/mountdevusbfs.sh\"\n\n" );
-				fprintf( stderr, "mkdir -p /dev/bus/usb/.usbfs\n" );
-				fprintf( stderr, "domount usbfs \"\" /dev/bus/usb/.usbfs -obusmode=0700,devmode=0600,listmode=0644\n" );
-				fprintf( stderr, "ln -s .usbfs/devices /dev/bus/usb/devices\n" );
-				fprintf( stderr, "mount --rbind /dev/bus/usb /proc/bus/usb\n\n" );
+			{
+				fprintf( stderr, "ERROR: Can not open \"/proc/bus/usb/devices\" \n" );
+				fprintf( stderr, "ERROR: Can not open \"/sys/kernel/debug/usb/devices\" \n" );
+				fprintf( stderr, "%s needs mounted usbfs\n", argv[0] );
 				return 0;
 			}
 		}
@@ -329,141 +341,93 @@ int main( int argc, char *argv[] )
 				{
 					lsusb[ nlsusb ].product = &dummy;
 				}
-				//printf( "%d:%d %s/%s\n", lsusb[ nlsusb ].ibus, lsusb[ nlsusb ].idev, lsusb[ nlsusb ].manufacturer, lsusb[ nlsusb ].product );
+				if( show_list )
+					printf( " %d:%d/%s/%s/\n", lsusb[ nlsusb ].ibus, lsusb[ nlsusb ].idev, 
+							lsusb[ nlsusb ].manufacturer, lsusb[ nlsusb ].product );
 				nlsusb ++;
 			}
 		}
+		if( show_list ) break;
 
 		// ttyACM
-		for( i = 0; i < 32; i ++ )
 		{
-			char devname[ 512 ];
-			char devname2[ 512 ];
-			char sysname[ 512 ];
-			FILE *fd;
+			DIR *dirs;
+			struct dirent *dir;
 
-			if( connected[0][ i ] == 1 ) continue;
-
-			sprintf( devname, "/dev/ttyACM%d", i );
-			sprintf( devname2, "ttyACM%d", i );
-			sprintf( sysname, "/sys/class/tty/ttyACM%d/device/uevent", i );
-
-			fd = fopen( sysname, "r" );
-			if( fd != NULL ) do
+			dirs = opendir( "/sys/bus/usb/drivers/cdc_acm/" );
+			if( dirs ) do
 			{
-				// デバイスが存在する
-				char uevent[ 1024 ];
-				int len;
-
-				len = fread( uevent, 1, sizeof( uevent ), fd );
-				if( len > 0 )
+				while( ( dir = readdir( dirs ) ) != NULL )
 				{
-					char *device;
-					char *device_end;
-					char *path;
-					int ibus, idev;
-
-					uevent[ len ] = 0;
-					device = strstr( uevent, "DEVICE=" );
-					if( device != NULL )
+					if( dir->d_type == DT_LNK && isdigit( dir->d_name[0] ) )
 					{
-						// Fedoraなど
-						device += strlen( "DEVICE=" );
+						char d_name[256];
+						char *pbus, *pdev, *pdev_end;
+						char sysname[512];
+						DIR *dirs2;
+						struct dirent *dir2;
+						int ibus2;
+						char device_path[256];
+						
+						strcpy( d_name, dir->d_name );
+						strcpy( device_path, dir->d_name );
+						
+						pbus = d_name;
+						pdev = strchr( pbus, '-' );
+						if( pdev == NULL ) continue;
 
-						device_end = strchr( device, '\n' );
-						if( device_end != NULL ) *device_end = 0;
+						pdev_end = strchr( device_path, ':' );
+						if( pdev_end == NULL ) continue;
+						*pdev_end = 0;
 
-						ibus = -1;
-						idev = -1;
-						for( path = device; path; path = strchr( path, '/' ) )
+						ibus2 = atoi( pbus );
+
+						sprintf( sysname, "/sys/bus/usb/devices/%s/tty/", dir->d_name );
+						dirs2 = opendir( sysname );
+						if( dirs2 )
 						{
-							path ++;
-							if( isdigit( *path ) && ibus == -1 )
+							while( ( dir2 = readdir( dirs2 ) ) != NULL )
 							{
-								ibus = atoi( path );
-							}
-							else if( isdigit( *path ) && idev == -1 )
-							{
-								idev = atoi( path );
-								break;
-							}
-						}
-						if( ibus == -1 || idev == -1 ) break;
-					}
-					else
-					{
-						// Ubuntuなど
-						DIR *dirs;
-						struct dirent *dir;
-
-						dirs = opendir( "/sys/bus/usb/drivers/cdc_acm/" );
-						if( dirs )
-						{
-							while( ( dir = readdir( dirs ) ) != NULL )
-							{
-								if( dir->d_type == DT_LNK && isdigit( dir->d_name[0] ) )
+								for( i = 0; i < 32; i ++ )
 								{
-									char d_name[256];
-									char *pbus, *pdev, *pdev_end;
-									char sysname[512];
-									DIR *dirs2;
-									struct dirent *dir2;
-									int ibus2, idev2;
-									char device_path[256];
-									
-									strcpy( d_name, dir->d_name );
-									strcpy( device_path, dir->d_name );
-									
-									pbus = d_name;
-									pdev = strchr( pbus, '-' );
-									if( pdev == NULL ) continue;
-									*pdev = 0;
-									pdev ++;
-									pdev_end = strchr( pdev, ':' );
-									if( pdev_end ) *pdev_end = 0;
-									
-									pdev_end = strchr( device_path, ':' );
-									if( pdev_end ) *pdev_end = 0;
+									char devname[ 512 ];
+									char devname2[ 512 ];
+									int ibus, idev;
 
-									ibus2 = atoi( pbus );
-									idev2 = atoi( pdev );
+									if( connected[0][ i ] == 1 ) continue;
 
-									sprintf( sysname, "/sys/bus/usb/devices/%s/tty/", dir->d_name );
-									dirs2 = opendir( sysname );
-									if( dirs2 )
+									sprintf( devname, "/dev/ttyACM%d", i );
+									sprintf( devname2, "ttyACM%d", i );
+
+									if( strcmp( dir2->d_name, devname2 ) == 0 )
 									{
-										while( ( dir2 = readdir( dirs2 ) ) != NULL )
-										{
-											if( strcmp( dir2->d_name, devname2 ) == 0 )
-											{
-												FILE *fd;
-												char devname[512];
-												char devname_data[512];
-												int len;
-												
-												ibus = ibus2;
-												sprintf( devname, "/sys/bus/usb/devices/%s/devnum", device_path );
-												fd = fopen( devname, "r" );
-												
-												len = fread( devname_data, 1, sizeof( devname_data ), fd );
-												devname_data[ len ] = 0;
-												idev = atoi( devname_data );
-												
-												fclose( fd );
-												break;
-											}
-										}
+										FILE *fd;
+										char devnum[512];
+										char devnum_data[512];
+										int len;
+									
+										ibus = ibus2;
+										sprintf( devnum, "/sys/bus/usb/devices/%s/devnum", device_path );
+										fd = fopen( devnum, "r" );
+										if( fd == NULL ) continue;
+									
+										len = fread( devnum_data, 1, sizeof( devnum_data ), fd );
+										devnum_data[ len ] = 0;
+										idev = atoi( devnum_data );
+									
+										fclose( fd );
+
+										Connect( devname, lsusb, nlsusb, devlist, ndevlist, 
+												ibus, idev, &connected[0][i], &pidlist[0][i] );	
+										break;
 									}
 								}
 							}
-							closedir( dirs );
+							closedir( dirs2 );
 						}
 					}
-
-					Connect( devname, lsusb, nlsusb, devlist, ndevlist, 
-							ibus, idev, &connected[0][i], &pidlist[0][i] );	
 				}
-				fclose( fd );
+				closedir( dirs );
 			} while( 0 );
 		}
 		// ttyUSB
@@ -483,7 +447,7 @@ int main( int argc, char *argv[] )
 						char sysname[512];
 						DIR *dirs2;
 						struct dirent *dir2;
-						int ibus2, idev2;
+						int ibus2;
 						char device_path[256];
 						
 						strcpy( d_name, dir->d_name );
@@ -501,7 +465,6 @@ int main( int argc, char *argv[] )
 						if( pdev_end ) *pdev_end = 0;
 
 						ibus2 = atoi( pbus );
-						idev2 = atoi( pdev );
 
 						sprintf( sysname, "/sys/bus/usb/devices/%s/", dir->d_name );
 						dirs2 = opendir( sysname );
@@ -559,7 +522,8 @@ int main( int argc, char *argv[] )
 		CheckDisconnect( connected[1], pidlist[1], "USB", WNOHANG );
 		sleep( 1 );
 	}
-	printf( "\033[31;4mTerminating...\033[0m\033[0K\n" );
+	if( !show_list )
+		printf( "\033[31;4mTerminating...\033[0m\033[0K\n" );
 	CheckDisconnect( connected[0], pidlist[0], "ACM", WNOHANG );
 	CheckDisconnect( connected[1], pidlist[1], "USB", WNOHANG );
 	for( i = 0; i < 32; i ++ )
