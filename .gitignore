@@ -1,0 +1,6 @@
+*~
+*.gz
+*.tar
+*.bz2
+*#
+connect-usb

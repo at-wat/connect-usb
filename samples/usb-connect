@@ -1,0 +1,62 @@
+#!/bin/bash                                 
+# chkconfig: 345 98 20
+# description: Watch system status
+# processname: usb-connect 
+
+#########################################################
+#                 素人にはお勧め出来ない                  #
+#                  デーモン化スクリプト                   #
+
+# 1. /etc/init.d/下にコピー
+# 2. chkconfig -addで追加
+#     上のchkconfig: 345の部分をそのディストリビューションでの
+#     起動状態のランレベルに変更
+# 3. /etc/sensors.confに設定ファイルを作成
+#     ただし、デーモン化する際にはすべてフルパスで
+
+
+DAEMON="/usr/local/bin/connect-usb /etc/sensors.conf"
+
+. /etc/rc.d/init.d/functions
+
+already_running_check () {
+  ps -A -e | grep connect-usb > /dev/null
+}
+
+case "$1" in
+  start)
+    echo -n "Starting usb-connect:"
+    if (already_running_check); then
+      failure "usb-connect"
+    else
+    {
+      success "usb-connect"
+      $DAEMON &
+    }
+    fi
+    ;;
+  stop)
+    echo -n "Stopping usb-connect:"
+    if (already_running_check); then
+    {
+      success "usb-connect"
+      killall -s SIGINT connect-usb > /dev/null 2> /dev/null
+    }
+    else
+      failure "usb-connect"
+    fi
+    ;;
+  restart|force-reload)
+    $0 stop
+    $0 start
+    ;;
+  *)
+    echo "Usage: /etc/init.d/usb-connect {start|stop|restart|force-reload}" >&2
+    exit 1
+    ;;
+esac
+
+echo
+
+exit 0
+
