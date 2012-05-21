@@ -43,8 +43,16 @@ void CommandExec( char *command )
 	{
 		if( *command == '\"' )
 		{
-			if( quot == 0 ) quot = 1;
-			else quot = 0;
+			if( quot == 0 )
+			{
+				quot = 1;
+				( *( argv - 1 ) ) ++;
+			}
+			else
+			{
+				quot = 0;
+				*command = 0;
+			}
 		}
 		if( *command == ' ' && !quot )
 		{
@@ -55,7 +63,7 @@ void CommandExec( char *command )
 	}
 	*argv = NULL;
 
-//	for( argv = args; *argv; argv ++ ) printf("%s ",*argv);
+//	for( argv = args; *argv; argv ++ ) printf("%s || ",*argv);
 //	printf("\n");
 	execv( args[0], args );
 }
@@ -104,12 +112,30 @@ void Connect( char *devname,
 					strcmp( devlist[ k ].product, lsusb[ j ].product ) == 0 )
 				{
 					char cmd[ 512 ];
+					char _format[ 512 ];
+					char *format;
 
 					if( shown )
 					{
 						printf( "\033[31;4m%s connected on %d/%d\033[0m\033[0K\n", devname, ibus, idev );
 					}
-					sprintf( cmd, devlist[ k ].command, devname );
+					cmd[0] = 0;
+					format = _format;
+					strcpy( format, devlist[ k ].command );
+
+					while( 1 )
+					{
+						char *str;
+
+						str = strstr( format, "%s" );
+						if( str == NULL ) break;
+
+						*str = 0;
+						strcat( cmd, format );
+						strcat( cmd, devname );
+						format = str + 2;
+					}
+					strcat( cmd, format );
 					printf( "  \033[31;4m%s\033[0m\033[0K\n", cmd );
 
 					if( ( *pidlist = fork() ) != 0 )
