@@ -1,5 +1,5 @@
 all: connect-usb
-PACKAGE = connect-usb-1.5
+PACKAGE = connect-usb-1.6
 prefix ?= /usr/local/bin
 
 
