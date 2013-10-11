@@ -156,8 +156,8 @@ int getttylist( struct usblist *list )
 				closedir( dirs2 );
 			}
 		}
+		closedir( dirs );
 	}
-	closedir( dirs );
 
 	return nlist;
 }
