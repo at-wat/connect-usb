@@ -131,11 +131,24 @@ int getttylist( struct usblist *list )
 					list[nlist].ibus = ibus;
 					strcpy( list[nlist].ttyname, devname );
 					len = readstring( list[nlist].product, 512, "/sys/bus/usb/devices/%s/product", device_path );
-					if( !len ) break;
+					if( !len )
+					{
+						list[nlist].product[0] = 0;
+					}
 					removelf( list[nlist].product );
-					readstring( list[nlist].manufacturer, 512, "/sys/bus/usb/devices/%s/manufacturer", device_path );
+					len = readstring( list[nlist].idproduct, 16, "/sys/bus/usb/devices/%s/idProduct", device_path );
 					if( !len ) break;
+					removelf( list[nlist].idproduct );
+
+					readstring( list[nlist].manufacturer, 512, "/sys/bus/usb/devices/%s/manufacturer", device_path );
+					if( !len )
+					{
+						list[nlist].manufacturer[0] = 0;
+					}
 					removelf( list[nlist].manufacturer );
+					len = readstring( list[nlist].idvendor, 16, "/sys/bus/usb/devices/%s/idVendor", device_path );
+					if( !len ) break;
+					removelf( list[nlist].idvendor );
 
 					nlist ++;
 					break;

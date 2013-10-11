@@ -24,6 +24,8 @@ struct devicelist
 {
 	char *product;
 	char *manufacturer;
+	char *idproduct;
+	char *idvendor;
 	char *command;
 };
 
@@ -38,6 +40,7 @@ void CommandExec( char *command )
 	char **argv;
 	char *args[128];
 	int quot = 0;
+	int esc = 0;
 
 	argv = args;
 	*argv = command;
@@ -45,7 +48,17 @@ void CommandExec( char *command )
 
 	for( ; *command; command ++ )
 	{
-		if( *command == '\"' )
+		if( *command == '\\' && !esc )
+		{
+			esc = 1;
+			continue;
+		}
+		if( *command == '\"' && esc && quot )
+		{
+			memcpy( command - 1, command, strlen( command ) + 1 );
+			command --;
+		}
+		else if( *command == '\"' && !esc )
 		{
 			if( quot == 0 )
 			{
@@ -64,11 +77,12 @@ void CommandExec( char *command )
 			*argv = command + 1;
 			argv ++;
 		}
+		esc = 0;
 	}
 	*argv = NULL;
 
-//	for( argv = args; *argv; argv ++ ) printf("%s || ",*argv);
-//	printf("\n");
+	//for( argv = args; *argv; argv ++ ) printf("%s || ",*argv);
+	//printf("\n");
 	execv( args[0], args );
 }
 
@@ -96,9 +110,11 @@ int main( int argc, char *argv[] )
 		len = getttylist( lsusb );
 		for( len --; len >= 0; len -- )
 		{
-			fprintf( stderr, "%d:%d '%s' '%s' %s\n", 
+			fprintf( stderr, "Bus %d Device %d: ID %s:%s '%s' '%s' %s\n", 
 					lsusb[len].ibus,
 					lsusb[len].idev,
+					lsusb[len].idvendor,
+					lsusb[len].idproduct,
 					lsusb[len].manufacturer,
 					lsusb[len].product,
 					lsusb[len].ttyname );
@@ -130,6 +146,7 @@ int main( int argc, char *argv[] )
 		while( 1 )
 		{
 			char *pcmd, *pmanu, *pprod, *pcmd_end;
+			char *pidvend, *pidprod;
 
 			if( T_next == NULL ) break;
 			T = T_next + 1;
@@ -147,27 +164,43 @@ int main( int argc, char *argv[] )
 
 			pmanu = strstr( pcmd_end + 1, "Manufacturer=" );
 			pprod = strstr( pcmd_end + 1, "Product=" );
+			pidvend = strstr( pcmd_end + 1, "ManufacturerId=" );
+			pidprod = strstr( pcmd_end + 1, "ProductId=" );
+
+			if( pidvend )
+			{
+				devlist[ ndevlist ].idvendor = pidvend + strlen( "ManufacturerId=" );
+				removelf( pidvend );
+			}
+			else
+			{
+				devlist[ ndevlist ].idvendor = &dummy;
+			}
 
 			if( pmanu )
 			{
-				char *manu_end;
-
 				devlist[ ndevlist ].manufacturer = pmanu + strlen( "Manufacturer=" );
-				manu_end = strchr( pmanu, '\n' );
-				if( manu_end ) *manu_end = 0;
+				removelf( pmanu );
 			}
 			else
 			{
 				devlist[ ndevlist ].manufacturer = &dummy;
 			}
 
+			if( pidprod )
+			{
+				devlist[ ndevlist ].idproduct = pidprod + strlen( "ProductId=" );
+				removelf( pidprod );
+			}
+			else
+			{
+				devlist[ ndevlist ].idproduct = &dummy;
+			}
+
 			if( pprod )
 			{
-				char *prod_end;
-
 				devlist[ ndevlist ].product = pprod + strlen( "Product=" );
-				prod_end = strchr( pprod, '\n' );
-				if( prod_end ) *prod_end = 0;
+				removelf( pprod );
 			}
 			else
 			{
@@ -196,7 +229,7 @@ int main( int argc, char *argv[] )
 				if( waitpid( status[i].pid, &state, WNOHANG ) != 0 )
 				{
 					status[i].connected = 0;
-					printf( "\033[31;4mDriver of /dev/%s terminated\033[0m\033[0K\n", status[i].dev.ttyname );
+					printf( "\033[31;4mDriver of %s terminated\033[0m\033[0K\n", status[i].dev.ttyname );
 				}
 			}
 		}
@@ -235,8 +268,14 @@ int main( int argc, char *argv[] )
 				int j;
 				for( j = 0; j < ndevlist; j ++ )
 				{
-					if( strcmp( devlist[ j ].manufacturer, lsusb[ len ].manufacturer ) == 0 &&
-						strcmp( devlist[ j ].product, lsusb[ len ].product ) == 0 )
+					if( ( strlen( devlist[ j ].manufacturer ) == 0 ||
+						  strcmp( devlist[ j ].manufacturer, lsusb[ len ].manufacturer ) == 0 ) &&
+						( strlen( devlist[ j ].product ) == 0 ||
+						  strcmp( devlist[ j ].product, lsusb[ len ].product ) == 0 ) &&
+						( strlen( devlist[ j ].idproduct ) == 0 ||
+						  strcmp( devlist[ j ].idproduct, lsusb[ len ].idproduct ) == 0 ) &&
+						( strlen( devlist[ j ].idvendor ) == 0 ||
+						  strcmp( devlist[ j ].idvendor, lsusb[ len ].idvendor ) == 0 ) )
 					{
 						char cmd[ 512 ];
 						char _format[ 512 ];
@@ -291,7 +330,7 @@ int main( int argc, char *argv[] )
 			if( waitpid( status[i].pid, &state, 0 ) != 0 )
 			{
 				status[i].connected = 0;
-				printf( "\033[31;4mDriver of /dev/%s terminated\033[0m\033[0K\n", status[i].dev.ttyname );
+				printf( "\033[31;4mDriver of %s terminated\033[0m\033[0K\n", status[i].dev.ttyname );
 			}
 		}
 	}
